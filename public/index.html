@@ -318,6 +318,9 @@ td{padding:10px;border-bottom:1px solid #16213d;vertical-align:middle}
 @keyframes caretBlink{50%{opacity:0}}
 .links a[hidden]{display:none}
 #navadmin{color:#ffd36b}
+#navlogin{min-height:36px;padding:0 16px;border:1px solid rgba(111,140,255,.6);border-radius:4px;color:#dbe6ff;margin-left:4px}
+#navlogin::after{display:none}
+#navlogin:hover,#navlogin.on{background:rgba(111,140,255,.2);color:#fff}
 .pill{display:inline-block;font-size:12px;padding:2px 9px;border:1px solid #2a3b66;border-radius:999px;color:var(--muted);white-space:nowrap}
 .pill.on{color:#7dffb0;border-color:#2c8a55}
 .hint{font-size:13px;color:var(--muted);line-height:1.5}
@@ -348,6 +351,7 @@ td{padding:10px;border-bottom:1px solid #16213d;vertical-align:middle}
       </div>
       <a href="#notifications" data-nav="notifications">Notifications</a>
       <a href="#admin" data-nav="admin" id="navadmin" hidden>Add Points</a>
+      <a href="#login" data-nav="login" id="navlogin">Sign in</a>
     </nav>
   </div>
 </header>
@@ -359,7 +363,7 @@ td{padding:10px;border-bottom:1px solid #16213d;vertical-align:middle}
     <a href="#home">About Tachyon</a>
     <a href="#rules">Rules</a>
     <a href="#privacy">Privacy Policy</a>
-    <a href="#admin" class="adminlink">Admin</a>
+    <a href="#login" class="adminlink" id="footlogin">Sign in</a>
   </div>
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -582,10 +586,10 @@ function pwForm(forced){
 }
 function pageAdmin(){
   if(!me){
-    return '<div class="page"><div class="wrap"><form class="panel login form" id="loginf" style="--rgb:111,140,255"><h2 style="font-size:26px">Admin sign in</h2>'+
+    return '<div class="page"><div class="wrap"><form class="panel login form" id="loginf" style="--rgb:111,140,255"><h2 style="font-size:26px">Sign in</h2>'+
       '<label for="lg-user">Username<input id="lg-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>'+
       '<label for="lg-pw">Password<input id="lg-pw" type="password" autocomplete="current-password" required></label><div class="err" id="loginerr" role="alert"></div>'+
-      '<button class="btn" type="submit">Sign in</button><p class="hint">Admin accounts are created by the super admin. There is no public sign-up.</p></form></div></div>';
+      '<button class="btn" type="submit">Sign in</button><p class="hint">For admins only. Accounts are created by the super admin, so there is no sign-up.</p></form></div></div>';
   }
   if(me.mustChange){
     return '<div class="page"><div class="wrap">'+pwForm(true)+'<p style="text-align:center;margin-top:14px"><button type="button" class="mini" data-out="1">Sign out</button></p></div></div>';
@@ -794,7 +798,8 @@ function render(keepScroll){
   if(hm&&hById(hm[1])){var h=hById(hm[1]); html=pageHouse(h.id); nav='house'; theme=[h.color,h.rgb,h.mode]; if(h.id==='matrix')flashLoop(true)}
   else if(key==='leaderboard'){html=pageLeaderboard();nav='leaderboard'}
   else if(key==='notifications'){html=pageNotifications();nav='notifications'}
-  else if(key==='admin'){html=pageAdmin();nav='admin'}
+  else if(key==='login'){if(me){location.replace('#admin');return} html=pageAdmin();nav='login'}
+  else if(key==='admin'){html=pageAdmin();nav=me?'admin':'login'}
   else if(key==='rules'){html=textPage('Rules',['Points are awarded or deducted by admins after each event, with a short reason recorded for every change.','The house with the highest total leads the cup. Equal totals share the same rank and are shown as tied.','Every change appears on the leaderboard, the house pages and the notifications list straight away.']);nav='rules'}
   else if(key==='privacy'){html=textPage('Privacy Policy',['Tachyon House Points shows house totals and the reasons points were awarded. It does not show personal details of students.']);nav='privacy'}
   else {html=pageHome(); key='home'}
@@ -803,6 +808,8 @@ function render(keepScroll){
   document.body.classList.toggle('is-home',nav==='home');
   setNavH();
   var na=$('#navadmin'); if(na) na.hidden=!me;
+  var nl=$('#navlogin'); if(nl) nl.textContent=me?'Sign out':'Sign in';
+  var fl=$('#footlogin'); if(fl) fl.textContent=me?'Sign out':'Sign in';
   if(nav==='home') placeEmitters(); else FX.setEmitters([]);
   setTheme(theme[0],theme[1],theme[2],nav);
   if(!keepScroll) window.scrollTo(0,0);
@@ -828,7 +835,7 @@ app.addEventListener('click',function(e){
     if(admSec==='adms') fetchAdmins().then(function(){render(true)}); else render(true);
     return;
   }
-  if(b.hasAttribute('data-out')){api('POST','/api/logout').then(function(){me=null;admSec='dash';render(true);toast('Signed out.')});return}
+  if(b.hasAttribute('data-out')){api('POST','/api/logout').then(function(){me=null;admSec='dash';toast('Signed out.');location.hash='#home'});return}
   if(b.hasAttribute('data-del')){
     api('DELETE','/api/entries/'+encodeURIComponent(b.getAttribute('data-del'))).then(function(r){
       if(lostLogin(r)) return;
@@ -857,7 +864,7 @@ app.addEventListener('submit',function(e){
     api('POST','/api/login',{username:u,password:pw}).then(function(r){
       busy(false);
       if(!r.ok){$('#loginerr').textContent=r.data.error||'Could not sign in.';return}
-      me=r.data.admin; admSec='dash'; render(true); toast('Signed in as '+me.username+'.');
+      me=r.data.admin; admSec='dash'; toast('Signed in as '+me.username+'.'); if(location.hash!=='#admin') location.hash='#admin'; else render(true);
     });
     return;
   }
@@ -920,6 +927,11 @@ app.addEventListener('submit',function(e){
   }
 });
 
+document.addEventListener('click',function(e){
+  var a=e.target.closest&&e.target.closest('#navlogin,#footlogin'); if(!a||!me) return;
+  e.preventDefault();
+  api('POST','/api/logout').then(function(){me=null;admSec='dash';toast('Signed out.'); if(location.hash==='#home'||location.hash==='')render(true); else location.hash='#home'});
+});
 function boot(){
   app.innerHTML='<div class="page"><div class="wrap"><p style="padding:60px 0;text-align:center;color:var(--muted)">Loading points…</p></div></div>';
   Promise.all([fetchEntries(),fetchMe()]).then(function(){render(false)});

@@ -47,11 +47,11 @@ npm test
 | Change own password | | ✔ | ✔ |
 | Create, disable and reset admin accounts | | | ✔ |
 
-There is no public sign-up. Admins get an extra **Add Points** link in the navigation bar after they sign in.
+There is no public sign-up. Visitors only see a **Sign in** button; after signing in, an admin gets an extra **Add Points** link in the navigation bar and the button becomes **Sign out**.
 
 ## How admin access works
 
-1. **You (the super admin)** sign in at `/#admin` (the **Admin** link in the footer).
+1. **You (the super admin)** click **Sign in** in the top bar (it also sits in the footer).
 2. Open **Manage Admins**, enter a username and a temporary password for a teacher (there is a *Generate one* button) and press **Create admin**. Give them the username and temporary password.
 3. The new admin signs in. Because the password is temporary, the site makes them **choose their own password** before they can do anything.
 4. They use **Add Points**. Every entry records **who added it** and when (see Points History).
