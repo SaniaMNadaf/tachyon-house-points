@@ -316,6 +316,11 @@ td{padding:10px;border-bottom:1px solid #16213d;vertical-align:middle}
 .tw-caret{display:inline-block;width:.07em;height:.82em;margin-left:.06em;vertical-align:-.06em;background:currentColor;box-shadow:0 0 12px var(--c);animation:caretBlink .7s steps(1) infinite}
 .tw-rest{visibility:hidden}
 @keyframes caretBlink{50%{opacity:0}}
+.links a[hidden]{display:none}
+#navadmin{color:#ffd36b}
+.pill{display:inline-block;font-size:12px;padding:2px 9px;border:1px solid #2a3b66;border-radius:999px;color:var(--muted);white-space:nowrap}
+.pill.on{color:#7dffb0;border-color:#2c8a55}
+.hint{font-size:13px;color:var(--muted);line-height:1.5}
 </style>
 </head>
 <body>
@@ -342,6 +347,7 @@ td{padding:10px;border-bottom:1px solid #16213d;vertical-align:middle}
         </div>
       </div>
       <a href="#notifications" data-nav="notifications">Notifications</a>
+      <a href="#admin" data-nav="admin" id="navadmin" hidden>Add Points</a>
     </nav>
   </div>
 </header>
@@ -382,26 +388,23 @@ var HOUSES=[
 function hById(id){for(var i=0;i<HOUSES.length;i++)if(HOUSES[i].id===id)return HOUSES[i];return null}
 
 /* ---------- points data (single source of truth) ---------- */
-var KEY='tachyon.entries.v1', mem=null;
-function seed(){
-  var H=3600e3, now=Date.now(), s=[];
-  function add(house,hrs,pts,reason){s.push({id:'s'+s.length,house:house,points:pts,reason:reason,ts:now-hrs*H})}
-  add('alpha',2,15,'Speed Test'); add('alpha',5,20,'Debug Duel'); add('alpha',26,-10,'Code penalty'); add('alpha',50,50,'Design Win');
-  add('alpha',9*24,40,'Orientation Quiz'); add('alpha',16*24,35,'Coding Relay'); add('alpha',23*24,45,'Hackathon Round 1'); add('alpha',30*24,50,'Design Sprint'); add('alpha',37*24,45,'Welcome Challenge');
-  add('infer',3,15,'Submission'); add('infer',6,20,'System Hack'); add('infer',27,-10,'Penalty: delay');
-  add('infer',8*24,35,'Logic Quiz'); add('infer',15*24,40,'Code Relay'); add('infer',22*24,40,'Hackathon Round 1'); add('infer',29*24,45,'Design Sprint'); add('infer',36*24,35,'Welcome Challenge');
-  add('matrix',4,15,'Captured Node'); add('matrix',7,20,'System Control'); add('matrix',12,10,'Puzzle Solve'); add('matrix',50,10,'Code Challenge');
-  add('matrix',9*24,50,'Logic Quiz'); add('matrix',16*24,45,'Coding Relay'); add('matrix',24*24,55,'Hackathon Round 1'); add('matrix',31*24,60,'Design Sprint'); add('matrix',38*24,45,'Welcome Challenge');
-  add('layer',2,15,'Speed Test'); add('layer',5,15,'Challenge'); add('layer',28,-15,'Penalty: fault'); add('layer',52,20,'Task Bonus');
-  add('layer',8*24,30,'Logic Quiz'); add('layer',17*24,40,'Code Relay'); add('layer',22*24,35,'Hackathon Round 1'); add('layer',30*24,45,'Design Sprint'); add('layer',37*24,35,'Welcome Challenge');
-  return s;
+var cache=[], cacheSig='', loadError=false, me=null;
+function loadEntries(){return cache}
+function api(method,url,body){
+  var o={method:method,credentials:'same-origin',headers:{}};
+  if(body!==undefined){o.headers['Content-Type']='application/json';o.body=JSON.stringify(body)}
+  return fetch(url,o).then(function(r){
+    return r.json().catch(function(){return {}}).then(function(d){return {ok:r.ok,status:r.status,data:d}});
+  }).catch(function(){return {ok:false,status:0,data:{error:'Cannot reach the server. Check your connection.'}}});
 }
-function loadEntries(){
-  try{var r=localStorage.getItem(KEY); if(r){var p=JSON.parse(r); if(Array.isArray(p)){mem=p;return p}}}catch(e){}
-  if(mem) return mem;
-  mem=seed(); saveEntries(mem); return mem;
+/* resolves true when the list changed since the last fetch */
+function fetchEntries(){
+  return api('GET','/api/entries').then(function(r){
+    if(!r.ok||!Array.isArray(r.data)){loadError=true;return false}
+    loadError=false; var sig=JSON.stringify(r.data), changed=sig!==cacheSig; cacheSig=sig; cache=r.data; return changed;
+  });
 }
-function saveEntries(list){mem=list; try{localStorage.setItem(KEY,JSON.stringify(list))}catch(e){}}
+function fetchMe(){return api('GET','/api/me').then(function(r){me=(r.ok&&r.data&&r.data.admin)||null})}
 function standings(){
   var es=loadEntries(), t={}, weekAgo=Date.now()-7*864e5;
   HOUSES.forEach(function(h){t[h.id]={pts:0,week:0}});
@@ -564,20 +567,36 @@ function pageNotifications(){
 
 function textPage(title,paras){return '<div class="page"><div class="wrap"><div class="text"><h1>'+title+'</h1>'+paras.map(function(p){return '<p>'+p+'</p>'}).join('')+'<p><a class="btn ghost" href="#home">Back home</a></p></div></div></div>'}
 
-/* ---------- admin ---------- */
-var authed=false; try{authed=sessionStorage.getItem('tachyon.admin')==='1'}catch(e){}
-var admSec='dash', confirmKey='';
+/* ---------- admin (real accounts, checked by the server) ---------- */
+var admSec='dash', admins=[];
 var PRESETS=['Speed Test','Hackathon Win','Design Win','Puzzle Solve','Code Challenge','Debug Duel','Late submission','Code penalty'];
+function fetchAdmins(){return api('GET','/api/admins').then(function(r){if(r.ok&&Array.isArray(r.data))admins=r.data})}
+function genPw(){var c='abcdefghijkmnpqrstuvwxyzACDEFGHJKLMNPQRSTUVWXYZ23456789',a=new Uint32Array(10),o='';(window.crypto||window.msCrypto).getRandomValues(a);for(var i=0;i<a.length;i++)o+=c[a[i]%c.length];return o}
+function pwForm(forced){
+  return '<form class="panel login form" id="pwf" style="--rgb:111,140,255"><h2 style="font-size:24px">'+(forced?'Choose your own password':'Change password')+'</h2>'+
+    (forced?'<p class="hint">You signed in with a temporary password. Set a new one to continue.</p>':'')+
+    '<label for="pw-cur">Current password<input id="pw-cur" type="password" autocomplete="current-password" required></label>'+
+    '<label for="pw-new">New password (8+ characters)<input id="pw-new" type="password" autocomplete="new-password" minlength="8" required></label>'+
+    '<label for="pw-new2">Repeat new password<input id="pw-new2" type="password" autocomplete="new-password" minlength="8" required></label>'+
+    '<div class="err" id="pw-err" role="alert"></div><button class="btn" type="submit">Save password</button></form>';
+}
 function pageAdmin(){
-  if(!authed){
+  if(!me){
     return '<div class="page"><div class="wrap"><form class="panel login form" id="loginf" style="--rgb:111,140,255"><h2 style="font-size:26px">Admin sign in</h2>'+
-      '<label for="pw">Password<input id="pw" type="password" autocomplete="current-password" required></label><div class="err" id="loginerr" role="alert"></div>'+
-      '<button class="btn" type="submit">Sign in</button><p style="font-size:13px;color:var(--muted)">Prototype password: tachyon. This check runs in the browser only, so it is not real security.</p></form></div></div>';
+      '<label for="lg-user">Username<input id="lg-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>'+
+      '<label for="lg-pw">Password<input id="lg-pw" type="password" autocomplete="current-password" required></label><div class="err" id="loginerr" role="alert"></div>'+
+      '<button class="btn" type="submit">Sign in</button><p class="hint">Admin accounts are created by the super admin. There is no public sign-up.</p></form></div></div>';
   }
+  if(me.mustChange){
+    return '<div class="page"><div class="wrap">'+pwForm(true)+'<p style="text-align:center;margin-top:14px"><button type="button" class="mini" data-out="1">Sign out</button></p></div></div>';
+  }
+  var isSuper=me.role==='super';
+  if(admSec==='adms'&&!isSuper) admSec='dash';
   var st=standings().sort(function(a,b){return b.pts-a.pts}), es=loadEntries(), L=leaders(st);
   var awarded=es.reduce(function(s,e){return s+(e.points>0?e.points:0)},0);
   var leadTxt=L.top===0?'None yet':L.list.map(function(h){return h.name}).join(' & ');
-  var side='<nav class="sidebar" aria-label="Admin sections"><button type="button" data-sec="dash" aria-current="'+(admSec==='dash')+'">Dashboard</button><button type="button" data-sec="hist" aria-current="'+(admSec==='hist')+'">Points History</button><button type="button" data-out="1">Sign out</button></nav>';
+  function sb(k,label){return '<button type="button" data-sec="'+k+'" aria-current="'+(admSec===k)+'">'+label+'</button>'}
+  var side='<nav class="sidebar" aria-label="Admin sections">'+sb('dash','Add Points')+sb('hist','Points History')+(isSuper?sb('adms','Manage Admins'):'')+sb('acct','My Account')+'<button type="button" data-out="1">Sign out</button></nav>';
   var body='';
   if(admSec==='dash'){
     var rows=st.map(function(h){return '<tr><td>'+h.rank+(h.tied?'<small style="color:var(--muted)"> tied</small>':'')+'</td><td><span class="dot" style="--d:'+h.color+';display:inline-block;margin-right:8px"></span><b style="color:'+h.color+'">'+h.name+'</b></td><td><b>'+fmt(h.pts)+'</b></td><td>'+(h.gap?'−'+h.gap:'Leader')+'</td></tr>'}).join('');
@@ -586,18 +605,36 @@ function pageAdmin(){
     body='<div class="stats3"><div class="stat"><div class="k">Current leader</div><div class="v">'+esc(leadTxt)+'</div></div><div class="stat"><div class="k">Total points awarded</div><div class="v">'+fmt(awarded)+'</div></div><div class="stat"><div class="k">Entries recorded</div><div class="v">'+es.length+'</div></div></div>'+
       '<div class="two"><div class="panel" style="--rgb:111,140,255"><h2>House Rankings</h2><div class="tablewrap"><table><thead><tr><th>Rank</th><th>House</th><th>Points</th><th>Gap</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
       '<h2 style="margin-top:18px">Latest entries</h2>'+feedHTML(es,4)+'</div>'+
-      '<form class="panel form" id="pf" style="--rgb:111,140,255" novalidate><h2>Manage Points</h2>'+
+      '<form class="panel form" id="pf" style="--rgb:111,140,255" novalidate><h2>Add or deduct points</h2>'+
         '<label for="pf-house">House<select id="pf-house">'+opts+'</select></label>'+
         '<div class="radios" role="radiogroup" aria-label="Award or deduct"><label><input type="radio" name="kind" value="1" checked>Award</label><label><input type="radio" name="kind" value="-1">Deduct</label></div>'+
         '<label for="pf-pts">Points<input id="pf-pts" type="number" min="1" max="1000" step="1" inputmode="numeric" placeholder="e.g. 50"></label>'+
         '<label for="pf-why">Reason<input id="pf-why" type="text" list="presets" maxlength="80" placeholder="e.g. Hackathon Win"><datalist id="presets">'+pre+'</datalist></label>'+
         '<div class="err" id="pf-err" role="alert"></div><button class="btn" type="submit">Submit points</button></form></div>';
-  } else {
+  } else if(admSec==='hist'){
     var list=es.slice().sort(function(a,b){return b.ts-a.ts});
     var trs=list.map(function(e){var h=hById(e.house)||{name:e.house,color:'#fff'};
-      return '<tr><td style="white-space:nowrap">'+esc(new Date(e.ts).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}))+'</td><td><b style="color:'+h.color+'">'+esc(h.name)+'</b></td><td><b class="'+(e.points>=0?'pos':'neg')+'">'+sgn(e.points)+'</b></td><td>'+esc(e.reason)+'</td><td><button type="button" class="mini" data-del="'+esc(e.id)+'" aria-label="Remove entry: '+esc(h.name)+' '+sgn(e.points)+', '+esc(e.reason)+'">Remove</button></td></tr>'}).join('');
-    body='<div class="panel" style="--rgb:111,140,255"><h2>Points History</h2><div class="tablewrap"><table><thead><tr><th>Date and time</th><th>House</th><th>Points</th><th>Reason</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div>'+
-      '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px"><button type="button" class="btn ghost" data-reset="seed">'+(confirmKey==='seed'?'Click again to confirm':'Restore sample data')+'</button><button type="button" class="btn ghost" data-reset="clear">'+(confirmKey==='clear'?'Click again to confirm':'Clear all points')+'</button></div></div>';
+      return '<tr><td style="white-space:nowrap">'+esc(new Date(e.ts).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}))+'</td><td><b style="color:'+h.color+'">'+esc(h.name)+'</b></td><td><b class="'+(e.points>=0?'pos':'neg')+'">'+sgn(e.points)+'</b></td><td>'+esc(e.reason)+'</td><td>'+esc(e.by||'')+'</td><td><button type="button" class="mini" data-del="'+esc(e.id)+'" aria-label="Remove entry: '+esc(h.name)+' '+sgn(e.points)+', '+esc(e.reason)+'">Remove</button></td></tr>'}).join('');
+    body='<div class="panel" style="--rgb:111,140,255"><h2>Points History</h2><p class="hint">Removing an entry takes its points off the house straight away, for everyone.</p><div class="tablewrap"><table><thead><tr><th>Date and time</th><th>House</th><th>Points</th><th>Reason</th><th>Added by</th><th></th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+  } else if(admSec==='adms'){
+    var ar=admins.map(function(a){
+      return '<tr><td><b>'+esc(a.username)+'</b>'+(a.id===me.id?' <small style="color:var(--muted)">(you)</small>':'')+'</td><td>'+(a.role==='super'?'Super admin':'Admin')+'</td><td><span class="pill'+(a.active?' on':'')+'">'+(a.active?(a.mustChange?'Active · temp password':'Active'):'Disabled')+'</span></td><td style="white-space:nowrap">'+esc(new Date(a.createdAt).toLocaleDateString([], {dateStyle:'medium'}))+'</td><td>'+(a.id===me.id?'':'<button type="button" class="mini" data-adm-toggle="'+a.id+'" data-to="'+(a.active?0:1)+'">'+(a.active?'Disable':'Enable')+'</button>')+'</td></tr>'}).join('');
+    var aopts=admins.filter(function(a){return a.active}).map(function(a){return '<option value="'+a.id+'">'+esc(a.username)+'</option>'}).join('');
+    body='<div class="panel" style="--rgb:111,140,255"><h2>Admin accounts</h2><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>'+ar+'</tbody></table></div></div>'+
+      '<div class="two" style="margin-top:16px">'+
+      '<form class="panel form" id="af" style="--rgb:111,140,255" novalidate><h2>Create an admin</h2><p class="hint">Give them the username and temporary password. They must choose their own password the first time they sign in.</p>'+
+        '<label for="af-user">Username<input id="af-user" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="24" placeholder="e.g. priya"></label>'+
+        '<label for="af-pw">Temporary password<input id="af-pw" type="text" autocomplete="off" spellcheck="false" placeholder="8+ characters"></label>'+
+        '<button type="button" class="mini" data-gen="af-pw">Generate one</button>'+
+        '<label for="af-role">Role<select id="af-role"><option value="admin">Admin (can add points)</option><option value="super">Super admin (can also manage admins)</option></select></label>'+
+        '<div class="err" id="af-err" role="alert"></div><button class="btn" type="submit">Create admin</button></form>'+
+      '<form class="panel form" id="rf" style="--rgb:111,140,255" novalidate><h2>Reset a password</h2><p class="hint">Use this when someone forgets theirs. It signs them out and they must choose a new password at next login.</p>'+
+        '<label for="rf-id">Admin<select id="rf-id">'+aopts+'</select></label>'+
+        '<label for="rf-pw">New temporary password<input id="rf-pw" type="text" autocomplete="off" spellcheck="false" placeholder="8+ characters"></label>'+
+        '<button type="button" class="mini" data-gen="rf-pw">Generate one</button>'+
+        '<div class="err" id="rf-err" role="alert"></div><button class="btn" type="submit">Reset password</button></form></div>';
+  } else {
+    body='<div class="panel" style="--rgb:111,140,255"><h2>My account</h2><p>Signed in as <b>'+esc(me.username)+'</b> ('+(me.role==='super'?'super admin':'admin')+').</p></div><div style="margin-top:16px">'+pwForm(false)+'</div>';
   }
   return '<div class="page"><div class="wrap"><div class="adm">'+side+'<section aria-label="Admin content" style="min-width:0">'+body+'</section></div></div></div>';
 }
@@ -761,9 +798,11 @@ function render(keepScroll){
   else if(key==='rules'){html=textPage('Rules',['Points are awarded or deducted by admins after each event, with a short reason recorded for every change.','The house with the highest total leads the cup. Equal totals share the same rank and are shown as tied.','Every change appears on the leaderboard, the house pages and the notifications list straight away.']);nav='rules'}
   else if(key==='privacy'){html=textPage('Privacy Policy',['Tachyon House Points shows house totals and the reasons points were awarded. It does not show personal details of students.']);nav='privacy'}
   else {html=pageHome(); key='home'}
+  if(loadError&&!cacheSig){html='<div class="page"><div class="wrap"><div class="panel" style="--rgb:111,140,255;margin-top:40px;text-align:center"><h2>We could not load the points</h2><p>The server did not answer. Check your connection and try again.</p><p><button type="button" class="btn" data-retry="1">Try again</button></p></div></div></div>';nav='home'}
   app.innerHTML=html;
   document.body.classList.toggle('is-home',nav==='home');
   setNavH();
+  var na=$('#navadmin'); if(na) na.hidden=!me;
   if(nav==='home') placeEmitters(); else FX.setEmitters([]);
   setTheme(theme[0],theme[1],theme[2],nav);
   if(!keepScroll) window.scrollTo(0,0);
@@ -777,25 +816,62 @@ window.addEventListener('hashchange',function(){render(false)});
 /* ---------- interactions ---------- */
 var toastT;
 function toast(msg){var t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on')},2600)}
+function lostLogin(r){if(r.status===401){me=null;render(true);toast('Please sign in again.');return true}return false}
 app.addEventListener('click',function(e){
   var b=e.target.closest('button'); if(!b) return;
   if(b.hasAttribute('data-order')){lbOrder=b.getAttribute('data-order');render(true);return}
   if(b.hasAttribute('data-filter')){nfFilter=b.getAttribute('data-filter');render(true);return}
-  if(b.hasAttribute('data-sec')){admSec=b.getAttribute('data-sec');confirmKey='';render(true);return}
-  if(b.hasAttribute('data-out')){authed=false;try{sessionStorage.removeItem('tachyon.admin')}catch(x){}render(true);return}
-  if(b.hasAttribute('data-del')){var id=b.getAttribute('data-del'); saveEntries(loadEntries().filter(function(x){return x.id!==id})); toast('Entry removed. Totals updated.'); render(true); return}
-  if(b.hasAttribute('data-reset')){
-    var k=b.getAttribute('data-reset');
-    if(confirmKey!==k){confirmKey=k;render(true);setTimeout(function(){if(confirmKey===k){confirmKey='';if(location.hash==='#admin')render(true)}},4000);return}
-    confirmKey=''; saveEntries(k==='seed'?seed():[]); toast(k==='seed'?'Sample data restored.':'All points cleared.'); render(true);
+  if(b.hasAttribute('data-retry')){boot();return}
+  if(b.hasAttribute('data-gen')){var gi=$('#'+b.getAttribute('data-gen')); if(gi){gi.value=genPw();gi.focus()} return}
+  if(b.hasAttribute('data-sec')){
+    admSec=b.getAttribute('data-sec');
+    if(admSec==='adms') fetchAdmins().then(function(){render(true)}); else render(true);
+    return;
+  }
+  if(b.hasAttribute('data-out')){api('POST','/api/logout').then(function(){me=null;admSec='dash';render(true);toast('Signed out.')});return}
+  if(b.hasAttribute('data-del')){
+    api('DELETE','/api/entries/'+encodeURIComponent(b.getAttribute('data-del'))).then(function(r){
+      if(lostLogin(r)) return;
+      if(!r.ok){toast(r.data.error||'Could not remove that entry.');return}
+      fetchEntries().then(function(){toast('Entry removed. Totals updated.');render(true)});
+    });
+    return;
+  }
+  if(b.hasAttribute('data-adm-toggle')){
+    var to=b.getAttribute('data-to')==='1';
+    api('PATCH','/api/admins/'+b.getAttribute('data-adm-toggle'),{active:to}).then(function(r){
+      if(lostLogin(r)) return;
+      if(!r.ok){toast(r.data.error||'Could not change that account.');return}
+      fetchAdmins().then(function(){toast(to?'Account enabled.':'Account disabled and signed out.');render(true)});
+    });
   }
 });
 app.addEventListener('submit',function(e){
   e.preventDefault();
-  var f=e.target;
+  var f=e.target, btn=f.querySelector('button[type=submit]');
+  function busy(on){if(btn)btn.disabled=on}
   if(f.id==='loginf'){
-    if($('#pw').value==='tachyon'){authed=true;try{sessionStorage.setItem('tachyon.admin','1')}catch(x){}render(true)}
-    else $('#loginerr').textContent='Wrong password. Try again.';
+    var u=$('#lg-user').value.trim(), pw=$('#lg-pw').value;
+    if(!u||!pw){$('#loginerr').textContent='Enter your username and password.';return}
+    busy(true);
+    api('POST','/api/login',{username:u,password:pw}).then(function(r){
+      busy(false);
+      if(!r.ok){$('#loginerr').textContent=r.data.error||'Could not sign in.';return}
+      me=r.data.admin; admSec='dash'; render(true); toast('Signed in as '+me.username+'.');
+    });
+    return;
+  }
+  if(f.id==='pwf'){
+    var cur=$('#pw-cur').value, nw=$('#pw-new').value, n2=$('#pw-new2').value, perr=$('#pw-err');
+    if(nw.length<8){perr.textContent='New password must be at least 8 characters.';return}
+    if(nw!==n2){perr.textContent='The two new passwords do not match.';return}
+    busy(true);
+    api('POST','/api/me/password',{current:cur,next:nw}).then(function(r){
+      busy(false);
+      if(lostLogin(r)) return;
+      if(!r.ok){perr.textContent=r.data.error||'Could not change the password.';return}
+      me.mustChange=false; render(true); toast('Password updated.');
+    });
     return;
   }
   if(f.id==='pf'){
@@ -803,15 +879,61 @@ app.addEventListener('submit',function(e){
     var n=Number(raw);
     if(!raw||!isFinite(n)||Math.floor(n)!==n||n<1||n>1000){err.textContent='Enter a whole number of points between 1 and 1000.';$('#pf-pts').focus();return}
     if(!why){err.textContent='Add a short reason so everyone can see why points changed.';$('#pf-why').focus();return}
-    var list=loadEntries().slice(); list.push({id:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),house:house,points:kind*n,reason:why,ts:Date.now()});
-    saveEntries(list);
-    var st=standings().sort(function(a,b){return b.pts-a.pts}), h=hById(house);
-    toast((kind>0?'Added ':'Deducted ')+n+' '+(kind>0?'to ':'from ')+h.name+'. '+leaders(st).list.map(function(x){return x.name}).join(' & ')+(leaders(st).list.length>1?' lead.':' leads.'));
-    render(true);
+    busy(true);
+    api('POST','/api/entries',{house:house,points:kind*n,reason:why}).then(function(r){
+      busy(false);
+      if(lostLogin(r)) return;
+      if(!r.ok){err.textContent=r.data.error||'Could not save the points.';return}
+      fetchEntries().then(function(){
+        var st=standings().sort(function(a,b){return b.pts-a.pts}), h=hById(house), ld=leaders(st).list;
+        toast((kind>0?'Added ':'Deducted ')+n+' '+(kind>0?'to ':'from ')+h.name+'. '+ld.map(function(x){return x.name}).join(' & ')+(ld.length>1?' lead.':' leads.'));
+        render(true);
+      });
+    });
+    return;
+  }
+  if(f.id==='af'){
+    var au=$('#af-user').value.trim(), ap=$('#af-pw').value, aerr=$('#af-err');
+    if(!au){aerr.textContent='Enter a username.';return}
+    if(ap.length<8){aerr.textContent='Temporary password must be at least 8 characters.';return}
+    busy(true);
+    api('POST','/api/admins',{username:au,password:ap,role:$('#af-role').value}).then(function(r){
+      busy(false);
+      if(lostLogin(r)) return;
+      if(!r.ok){aerr.textContent=r.data.error||'Could not create the account.';return}
+      fetchAdmins().then(function(){render(true);toast('Admin "'+au+'" created. Share the temporary password with them.')});
+    });
+    return;
+  }
+  if(f.id==='rf'){
+    var rp=$('#rf-pw').value, rerr=$('#rf-err'), rid=$('#rf-id').value;
+    if(!rid){rerr.textContent='Choose an admin.';return}
+    if(rp.length<8){rerr.textContent='Temporary password must be at least 8 characters.';return}
+    busy(true);
+    api('PATCH','/api/admins/'+rid,{password:rp}).then(function(r){
+      busy(false);
+      if(lostLogin(r)) return;
+      if(!r.ok){rerr.textContent=r.data.error||'Could not reset the password.';return}
+      if(+rid===me.id){me=null;render(true);toast('Password reset. Sign in again.');return}
+      fetchAdmins().then(function(){render(true);toast('Password reset. They must choose a new one at next login.')});
+    });
   }
 });
 
-render(false);
+function boot(){
+  app.innerHTML='<div class="page"><div class="wrap"><p style="padding:60px 0;text-align:center;color:var(--muted)">Loading points…</p></div></div>';
+  Promise.all([fetchEntries(),fetchMe()]).then(function(){render(false)});
+}
+function editing(){var a=document.activeElement;return !!(a&&app.contains(a)&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName))}
+/* keep every visitor's numbers fresh: ask the server again every 15 seconds */
+setInterval(function(){
+  if(document.hidden||(loadError&&!cacheSig)) return;
+  fetchEntries().then(function(changed){if(changed&&!editing())render(true)});
+},15000);
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&cacheSig) fetchEntries().then(function(changed){if(changed&&!editing())render(true)});
+});
+boot();
 })();
 </script>
 </body>
