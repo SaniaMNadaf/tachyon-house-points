@@ -178,7 +178,7 @@ function createApp(db, opts = {}) {
     try {
       const info = db.prepare('INSERT INTO admins (username, password_hash, role, must_change, created_at) VALUES (?,?,?,1,?)')
         .run(username.trim(), bcrypt.hashSync(password, 12), r, Date.now());
-      res.status(201).json({ id: info.lastInsertRowid });
+      res.status(201).json({ id: Number(info.lastInsertRowid) });
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return bad(res, 409, 'That username is already taken.');
       throw e;

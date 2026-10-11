@@ -17,7 +17,7 @@ A house-points website for four college houses: **Alpha, Infer, Matrix and Layer
 
 ## Run it
 
-Needs Node.js 18 or newer.
+Needs Node.js 22.13 or newer (check with `node -v`). The database is the SQLite built into Node, so there is nothing to compile and no extra tools to install.
 
 ```bash
 npm install

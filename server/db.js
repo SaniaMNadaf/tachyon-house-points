@@ -2,16 +2,20 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const Database = require('better-sqlite3');
+// Node's built-in SQLite (Node 22.13+). Nothing to compile, so it installs the same on every computer.
+const origEmit = process.emitWarning;
+process.emitWarning = function (w, ...a) { if (/SQLite/i.test(String(w))) return; return origEmit.call(process, w, ...a); };
+const { DatabaseSync } = require('node:sqlite');
+process.emitWarning = origEmit;
 const bcrypt = require('bcryptjs');
 
 const HOUSES = ['alpha', 'infer', 'matrix', 'layer'];
 
 function openDb(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const db = new DatabaseSync(file);
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
   db.exec(`
     CREATE TABLE IF NOT EXISTS admins (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +77,9 @@ function seedSample(db) {
   add('layer',2,15,'Speed Test'); add('layer',5,15,'Challenge'); add('layer',28,-15,'Penalty: fault'); add('layer',52,20,'Task Bonus');
   add('layer',8*24,30,'Logic Quiz'); add('layer',17*24,40,'Code Relay'); add('layer',22*24,35,'Hackathon Round 1'); add('layer',30*24,45,'Design Sprint'); add('layer',37*24,35,'Welcome Challenge');
   const ins = db.prepare('INSERT INTO entries (house, points, reason, created_at, admin_id, admin_name) VALUES (?,?,?,?,NULL,?)');
-  db.transaction(() => rows.forEach((r) => ins.run(r[0], r[1], r[2], r[3], 'sample data')))();
+  db.exec('BEGIN');
+  try { rows.forEach((r) => ins.run(r[0], r[1], r[2], r[3], 'sample data')); db.exec('COMMIT'); }
+  catch (e) { db.exec('ROLLBACK'); throw e; }
   return true;
 }
 
