@@ -5,6 +5,16 @@ A house-points website for four college houses: **Alpha, Infer, Matrix and Layer
 - **Frontend:** one static page (`public/index.html`) with a Three.js background.
 - **Backend:** Node.js + Express + SQLite, with real admin accounts.
 
+## Screenshots
+
+![Home page](docs/homepage.png)
+![leader Board page](docs/leaderboardpage.png)
+![Alpha House ](docs/alphahouseview.png)
+![Infer House ](docs/inferhouseview.png)
+![Matrix page](docs/matrixhouseview.png)
+![Layer page](docs/layerhouseview.png)
+
+
 ## What the assignment asks for, and where it lives
 
 | Requirement | Where |
